@@ -89,7 +89,7 @@ export function apply(ctx, rawConfig) {
       }
     }
     try {
-      const adapter = createCursorAdapter({ getCatalog: () => catalog, config, ctx })
+      const adapter = createCursorAdapter({ getCatalog: () => catalog, config, llm: llmService })
       disposeRoute = llmService.registerAdapter([config.provider], adapter)
     } catch (error) {
       routeFailed = true
