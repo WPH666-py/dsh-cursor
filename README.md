@@ -117,7 +117,7 @@ https://gitee.com/ph-wang_admin/dsh-cursor.git
 
 装完要**重启 HarGlobal**：`dsh-cursor` 是新的 Host bundle，不走 HMR，重启后模型选择器里才会出现 `Cursor` 分组。
 
-> ⚠️ **不要用本地目录安装**（把 `install_bundle` 的 target 指到 `D:...dsh-cursor` 这种路径）。
+> ⚠️ **不要用本地目录安装**（把 `install_bundle` 的 target 指到 `D:/projects-py/dsh-cursor` 这种本地路径）。
 > pnpm 会把那条依赖记成 `link:`，指向 profile 之外的真实目录；而打包版 HarGlobal 启动器要求 profile 自包含，
 > 下次启动会直接失败：
 > `dsh desktop: profile bundle "dsh-cursor" resolved outside the desktop profile`，
