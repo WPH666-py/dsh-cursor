@@ -1,0 +1,10 @@
+# dsh-cursor bundle: one Host row; everything else is runtime behaviour.
+# Every config key is optional and documented in README.md.
+- insert:
+    - id: dsh-cursor
+      name: dsh-cursor
+      config:
+        provider: cursor
+        displayName: Cursor
+        include: all
+        refreshSeconds: 900

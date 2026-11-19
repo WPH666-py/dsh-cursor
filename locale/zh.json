@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Cursor 模型",
+    "description": "把本机 Cursor 账号可用的模型全部导入模型列表，并生成 Claude Code / Codex 的模型配置；本机没装 Cursor 时不做任何导入。"
+  }
+}

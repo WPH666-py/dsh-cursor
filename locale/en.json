@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Cursor Models",
+    "description": "Imports every model the local Cursor account can use into the model picker, and writes Claude Code / Codex model configuration."
+  }
+}
