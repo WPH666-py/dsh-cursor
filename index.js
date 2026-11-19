@@ -25,6 +25,8 @@ export function apply(ctx, rawConfig) {
   let stopped = false
   let disposeRoute = null
   let routeFailed = false
+  /** The llm service, once a context that declares it is available. */
+  let llmService = null
   let catalog = null
   let signature = ''
 
@@ -71,7 +73,8 @@ export function apply(ctx, rawConfig) {
       return
     }
     if (routeFailed) return
-    if (typeof ctx.llm?.registerAdapter !== 'function') {
+    if (llmService === null) return
+    if (typeof llmService.registerAdapter !== 'function') {
       routeFailed = true
       log(ctx, 'warn', 'this host has no llm service; the model list was exported but not registered')
       return
@@ -87,12 +90,25 @@ export function apply(ctx, rawConfig) {
     }
     try {
       const adapter = createCursorAdapter({ getCatalog: () => catalog, config, ctx })
-      disposeRoute = ctx.llm.registerAdapter([config.provider], adapter)
+      disposeRoute = llmService.registerAdapter([config.provider], adapter)
     } catch (error) {
       routeFailed = true
       log(ctx, 'warn', `could not register the "${config.provider}" route: ${error?.message ?? error}`)
     }
   }
+
+  // Cordis rejects a direct `ctx.llm` read from a plugin that never declared the dependency,
+  // and that throw used to be swallowed by the refresh catch: the catalog exported but the
+  // route never registered, so the picker stayed empty. Resolve it through an injected child
+  // context, which also retries once the service appears.
+  ctx.inject(['llm'], (scoped) => {
+    llmService = scoped.llm
+    publishRoute(true)
+    return () => {
+      llmService = null
+      stopRoute()
+    }
+  })
 
   ctx.effect(() => {
     let timer = null

@@ -1,6 +1,6 @@
 {
   "name": "dsh-cursor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Import the local Cursor account's model catalog into the Harness model picker, and emit Claude Code / Codex model configurations.",

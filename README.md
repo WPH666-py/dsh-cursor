@@ -106,8 +106,8 @@ HarGlobal 侧栏 **Plugins → 安装插件**：
 
 | 来源 | 安装地址 |
 |---|---|
-| **Gitee（推荐，国内快）** | `https://gitee.com/ph-wang_admin/dsh-cursor/raw/main/dist/dsh-cursor-0.1.0.tgz` |
-| GitHub（备用） | `https://github.com/WPH666-py/dsh-cursor/raw/main/dist/dsh-cursor-0.1.0.tgz` |
+| **Gitee（推荐，国内快）** | `https://gitee.com/ph-wang_admin/dsh-cursor/raw/main/dist/dsh-cursor-0.1.1.tgz` |
+| GitHub（备用） | `https://github.com/WPH666-py/dsh-cursor/raw/main/dist/dsh-cursor-0.1.1.tgz` |
 
 本机装了 git 的话，也可以按 git 地址安装（跟随仓库更新）：
 
