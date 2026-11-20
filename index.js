@@ -14,8 +14,15 @@ import { log } from './lib/log.js'
 import { writeArtifacts } from './lib/publish/artifacts.js'
 import { clearClientTargets, syncClientTargets } from './lib/publish/clients.js'
 import { createCursorAdapter } from './lib/publish/harness.js'
+import { createPrintAdapter } from './lib/cli/print-backend.js'
+import { createBootstrap, describe } from './lib/cli/bootstrap.js'
+import { provision, wslRunAsync } from './lib/cli/provision.js'
 
 export function apply(ctx, rawConfig) {
+  if (process.platform !== 'win32') {
+    log(ctx, 'info', `dsh-cursor targets Windows only; this host is ${process.platform}, so nothing was imported`)
+    return
+  }
   const config = resolveConfig(rawConfig)
   if (!config.enabled) {
     log(ctx, 'info', 'disabled by configuration')
@@ -65,6 +72,35 @@ export function apply(ctx, rawConfig) {
     if (initial || changed) {
       log(ctx, 'info', `imported ${next.models.length}/${next.total} Cursor models (${next.source}) as "${config.provider}"`)
     }
+  }
+
+  /** Drive Cursor's own CLI; on Windows it lives inside WSL. */
+  function printAdapter() {
+    const print = config.targets.harness.print
+    maybeProvision(print.distro)
+    return createPrintAdapter({
+      provider: config.provider,
+      displayName: config.displayName,
+      getModels: () => catalog?.models ?? [],
+      spawn: { distro: print.distro, workspace: print.workspace, binary: print.binary },
+      // Only runs when a turn produces nothing, so a broken setup explains itself.
+      diagnose: async () => describe(await createBootstrap({ distro: print.distro, binary: print.binary }).probe()),
+    })
+  }
+
+  let provisioning = null
+
+  /** First use on a machine without a distro: import one in the background. */
+  function maybeProvision(distro) {
+    if (!config.targets.harness.print.autoProvision || provisioning) return
+    provisioning = provision({
+      distro,
+      run: wslRunAsync,
+      log: (message) => log(ctx, 'info', `provision: ${message}`),
+    })
+      .then((result) => log(ctx, 'info', `provision: ${result.status} (${result.distro})`))
+      .catch((error) => log(ctx, 'warn', `provision failed: ${error?.message ?? error}`))
+      .finally(() => { provisioning = null })
   }
 
   function publishRoute(changed) {

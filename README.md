@@ -1,6 +1,6 @@
 # dsh-cursor
 
-把本机 Cursor 账号里**所有可用模型**导入模型列表，并按 Claude Code、Codex、Harness 各自的原生机制落地。
+**仅支持 Windows。** 把本机 Cursor 账号里**所有可用模型**导入模型列表，并按 Claude Code、Codex、Harness 各自的原生机制落地。
 **本机没装 Cursor 时什么都不做**：不注册 provider，不写任何配置文件，不落任何产物。
 
 ```
@@ -22,6 +22,28 @@ token 只在本进程内存里用于构造请求头：不写文件、不进日�
 
 读 `state.vscdb` 前会先把 `state.vscdb` / `-wal` / `-shm` 复制到临时目录再以只读方式打开，正在运行的 Cursor 不会感知到锁；
 `node:sqlite` 不可用时降级为按 key 定位的字节扫描（token、邮箱、后端地址这类短值仍然可读）。
+
+## 1.5 别人怎么用（分发形态）
+
+**仅 Windows。** 导入这条路不需要 WSL、不需要 CLI、不需要推理桥——只要有 Cursor。
+
+```bash
+npm pack                      # 产出 dsh-cursor-<ver>.tgz（约 50 KB）
+# 对方机器上：
+plugin_manager({ action: 'install_bundle', target: '<路径>/dsh-cursor-<ver>.tgz' })
+```
+
+装完重启 Harness，模型选择器里出现 `Cursor` 分组。取数是**四级回退**，自动落到能用的那一级：
+
+| 级别 | 来源 | 本机实测 | 备注 |
+|---|---|---|---|
+| 1 | 账号接口 `GetUsableModels`（token 经 DPAPI 解密） | ✅ 284 条 | 全量 + 能力位 |
+| 2 | 官方 CLI `cursor-agent --list-models`（走 WSL，可选） | ✅ 284 条 | 与接口一致 |
+| 3 | 上次成功的 `.cache.json` | ✅ | 断网兜底 |
+| 4 | `state.vscdb` 的 `availableDefaultModels2` | ✅ 48 条 | 无需 token，但是子集 |
+
+第 2 级是可选增强：CLI 的 `auto` 会归一成接口的 `default`，能力位（图片/上下文）从第 4 级按 base id 借回来。
+不装 CLI 也能导入，只是级别会落在 1 或 3/4。
 
 ## 2. 三个客户端怎么"适配"
 
@@ -85,6 +107,11 @@ Claude Code 没有"任意模型列表"，它能重定向的是三个具名槽位
     targets:
       harness:
         enabled: true
+        backend: delegate      # delegate | print（print 直接用 Cursor 官方 CLI，Windows 走 WSL）
+        print:
+          distro: Ubuntu
+          workspace: /tmp
+          binary: /root/.local/bin/cursor-agent
         delegate:
           provider: ''        # 能真正服务这些 id 的已注册路由
           modelMap: { }        # cursor id -> 上游 id
@@ -160,10 +187,54 @@ git push gitee main && git push github main
 | `ERR_PNPM_UNEXPECTED_STORE`：`node_modules` 由 `HarGlobal\data\desktop\pnpm\store\v11` 装入，而 pnpm 11 默认找 `%LOCALAPPDATA%\pnpm\store\v11` | 在 profile 的 `pnpm-workspace.yaml` 追加 `storeDir: '<HarGlobal store>'`；删掉这一行即还原 |
 | `ERR_PNPM_IGNORED_BUILDS`：`allowBuilds` 里 `dsh-free-vision` / `sharp` 还留着 `set this to true or false` 占位，配合 `strictDepBuilds: true` 直接拒绝安装 | 把这两个键改成 `false`（**不执行**任何构建脚本，两者已有的预编译产物不受影响） |
 
-## 6. 已知边界
+## 6. 凭证：Cursor 3.x 把 token 静态加密了
 
-- **Cursor 升级可能改接口**：`aiserver.v1` 是 Cursor 内部协议，`GetUsableModels` 一旦变更，插件会降级到缓存/本地目录并在日志里说明，不会静默给空列表。
-- **WAL 快照**：复制期间 Cursor 正在写，极端情况下可能读到上一版目录；下一次刷新会自愈。
-- **Codex profile 数量**：280 条 id 全量生成会很长，默认截断到 60 条（`targets.codex.maxProfiles`）。
-- **`include: base`**：Cursor 的 Anthropic 系列没有裸 id，切成 `base` 后这些系列会从列表里消失，槽位也会空——需要它们就保持 `all`。
-- **`bridge.baseURL` 默认值是占位符** `http://127.0.0.1:8787/v1`：产物因此始终是合法 TOML/JSON，但只有你显式配了 `bridge.baseURL`，`apply` 才会真的去改 Claude Code / Codex 的配置文件。
+`cursorAuth/accessToken` 现在是 `cursor-safe-storage:v1:<b64>`（`cursor.storage.authTokenEncryptionAtRest = true`），**直接当 Bearer 用会 401**。
+[lib/cli/safe-storage.js](<lib/cli/safe-storage.js>) 负责解封：
+
+```
+Local State → os_crypt.encrypted_key（前 5 字节是字面量 "DPAPI"）
+  → PowerShell：Add-Type -AssemblyName System.Security + ProtectedData::Unprotect（数据走环境变量）
+  → AES-256-GCM 解 v10 信封（nonce 12B、tag 末 16B）
+  → 413 字节 JWT
+```
+
+解出来之后 `GetUsableModels` 返回 284 条（加密上线前是 401）。单测用注入密钥构造真信封，覆盖往返、错 key、未知版本三种情况。
+
+## 7. CursorCli 桥：已打通（backend: print）
+
+目标达成：请求由 **Cursor 自己的进程**发出，插件只做协议转换，不伪造客户端头。
+
+**为什么不是 ACP**：官方 CLI 的子命令只有 `login/about/update/agent/ls/resume/create-chat/persist/generate-rule`，**没有 `acp`**。真正的非交互入口是它自带的打印通道：
+
+```
+cursor-agent --print --output-format stream-json --stream-partial-output --model <id> --trust --workspace /tmp
+```
+
+prompt 走 **stdin**（避免一切引号转义），事件是 NDJSON：
+
+| 事件 | 用途 |
+|---|---|
+| `{type:"system",subtype:"init",apiKeySource:"login",model,…}` | 会话建立、模型解析结果 |
+| `{type:"assistant",message:{content:[{type:"text",text}]}}` | 文本；CLI 会重复发全量，适配器只取增量 |
+| `{type:"result",subtype:"success",usage:{inputTokens,outputTokens},…}` | 用量与结束原因 |
+
+实测（Windows 侧发起，WSL 内执行，Premium 账号）：
+
+```
+BRIDGE OK
+usage: {"inputTokens":2,"outputTokens":10}
+seq: block-start → text-delta → block-end → usage → finish     # 16.3s（含 WSL 启动）
+```
+
+**Windows 上怎么跑**：CLI 只发布 linux/darwin 包，所以走 WSL——`wsl.exe -d Ubuntu -u root -- /root/.local/bin/cursor-agent …`（不经过 shell，参数干净）。安装与登录步骤见 [docs/wsl-cursor-agent.md](<docs/wsl-cursor-agent.md>)。
+
+**代价**：一轮一个进程、约 10s 的 WSL 启动开销。要更快就需要常驻进程协议（`persist` 子命令），属于后续优化。
+
+## 8. 已知边界
+
+- **Cursor 升级可能改接口**：`aiserver.v1` 是内部协议，`GetUsableModels` 一旦变更会降级到缓存/本地目录并在日志说明。
+- **WAL 快照**：复制期间 Cursor 正在写，极端情况可能读到上一版目录，下次刷新自愈。
+- **Codex profile 数量**：默认截断 60 条（`targets.codex.maxProfiles`）。
+- **`include: base`**：Cursor 的 Anthropic 系列没有裸 id，切 `base` 后这些系列会消失，槽位也会空。
+- **`bridge.baseURL` 默认是占位符** `http://127.0.0.1:8787/v1`：产物始终是合法 TOML/JSON，只有显式配置 `apply` 才真的改客户端配置。

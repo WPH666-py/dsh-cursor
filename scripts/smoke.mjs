@@ -6,6 +6,15 @@ let adapter = null
 const ctx = {
   logger: () => ({ info: (m) => events.push(['info', m]), warn: (m) => events.push(['warn', m]) }),
   effect: (fn) => fn(),
+  inject: (deps, callback) => callback({
+    llm: {
+      registerAdapter: (providers, instance) => {
+        adapter = instance
+        return Object.assign(() => {}, { replace: () => {} })
+      },
+      stream: async function* () {},
+    },
+  }),
   llm: {
     registerAdapter(providers, instance) {
       adapter = instance
@@ -16,7 +25,7 @@ const ctx = {
 }
 
 apply(ctx, {})
-await new Promise((r) => setTimeout(r, 9000))
+await new Promise((r) => setTimeout(r, 20000))
 console.log('events:', events)
 console.log('providerInfo:', adapter && adapter.providerInfo())
 const models = adapter ? await adapter.listModels() : []
